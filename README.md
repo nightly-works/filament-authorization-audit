@@ -35,7 +35,7 @@ MEDIUM Providers/Filament/AdminPanelProvider.php:26  [panel-registration] Self-r
 
 ## What it cannot see
 
-It reads the code as written. It does not know whether a `visible()` condition is a real permission check, cannot follow actions or columns built in helper methods with dynamic class names, and finds policies by name (`ModelPolicy` classes, `Gate::policy()`, `#[UsePolicy]`), not by running Laravel's policy discovery. A clean run means none of these patterns were found, not that the panel is secure. Built and tested against Filament 5; the patterns are the same in Filament 3 and 4.
+It reads the code as written. It does not know whether a `visible()` condition is a real permission check, cannot follow actions or columns built in helper methods with dynamic class names, and finds policies by name (`ModelPolicy` classes, `Gate::policy()`, `#[UsePolicy]`), not by running Laravel's policy discovery. A clean run means none of these patterns were found, not that the panel is secure. Built and tested against Filament 5; actions and columns are matched by class name, so older versions may work but are not tested.
 
 ## Development
 
