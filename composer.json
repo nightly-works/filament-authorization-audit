@@ -1,0 +1,21 @@
+{
+    "name": "nightly-works/filament-authorization-audit",
+    "description": "Finds authorization gaps in Filament panels: models without a policy, custom actions and editable columns without checks, open registration.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["filament", "laravel", "security", "authorization", "audit", "static-analysis"],
+    "require": {
+        "php": "^8.2",
+        "nikic/php-parser": "^5.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": { "NightlyWorks\\FilamentAuthorizationAudit\\": "src/" }
+    },
+    "autoload-dev": {
+        "psr-4": { "NightlyWorks\\FilamentAuthorizationAudit\\Tests\\": "tests/" }
+    },
+    "bin": ["bin/filament-authorization-audit"]
+}

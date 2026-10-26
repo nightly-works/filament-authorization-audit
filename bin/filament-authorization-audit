@@ -1,0 +1,60 @@
+#!/usr/bin/env php
+<?php
+
+// Usage: filament-authorization-audit [--json] [--fail-on=high|medium|never] [path ...]
+// Path defaults to app/. Exit code 1 when a finding at or above --fail-on (default: medium) exists.
+
+use NightlyWorks\FilamentAuthorizationAudit\Auditor;
+use NightlyWorks\FilamentAuthorizationAudit\Finding;
+
+foreach ([__DIR__.'/../vendor/autoload.php', __DIR__.'/../../../autoload.php'] as $autoload) {
+    if (is_file($autoload)) {
+        require $autoload;
+        break;
+    }
+}
+
+$json = false;
+$failOn = Finding::MEDIUM;
+$paths = [];
+foreach (array_slice($argv, 1) as $arg) {
+    if ($arg === '--json') {
+        $json = true;
+    } elseif (str_starts_with($arg, '--fail-on=')) {
+        $failOn = substr($arg, 10);
+    } elseif ($arg === '--help' || $arg === '-h') {
+        fwrite(STDOUT, "Usage: filament-authorization-audit [--json] [--fail-on=high|medium|never] [path ...]\n");
+        exit(0);
+    } else {
+        $paths[] = $arg;
+    }
+}
+$paths = $paths ?: ['app'];
+
+$findings = [];
+foreach ($paths as $path) {
+    if (! file_exists($path)) {
+        fwrite(STDERR, "No such file or directory: {$path}\n");
+        exit(2);
+    }
+    array_push($findings, ...(new Auditor())->audit($path));
+}
+
+if ($json) {
+    echo json_encode(array_map(fn (Finding $f) => $f->toArray(), $findings), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "\n";
+} else {
+    foreach ($findings as $f) {
+        printf("%-6s %s:%d  [%s] %s\n", strtoupper($f->severity), $f->file, $f->line, $f->rule, $f->message);
+    }
+    $counts = array_count_values(array_map(fn (Finding $f) => $f->severity, $findings));
+    printf("%d high, %d medium, %d notice\n", $counts['high'] ?? 0, $counts['medium'] ?? 0, $counts['notice'] ?? 0);
+}
+
+$rank = [Finding::NOTICE => 0, Finding::MEDIUM => 1, Finding::HIGH => 2];
+$threshold = $rank[$failOn] ?? PHP_INT_MAX;
+foreach ($findings as $f) {
+    if ($rank[$f->severity] >= $threshold) {
+        exit(1);
+    }
+}
+exit(0);
