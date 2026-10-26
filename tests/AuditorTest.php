@@ -49,8 +49,12 @@ final class AuditorTest extends TestCase
         }
 
         $this->assertArrayHasKey('authorization-skipped', $byRule);
-        // export has no check at all; archive is authorized; the toggle is disabled.
+        // export has no check at all; archive is authorized; the toggle is disabled; in NotFilament.php,
+        // other classes named Action or SelectColumn and a link-only action are not findings, and a
+        // disabled action counts as visibility-only.
         $this->assertCount(1, $byRule['custom-action-unauthorized']);
+        $this->assertCount(1, $byRule['custom-action-visibility-only']);
+        $this->assertStringContainsString("'lock'", $byRule['custom-action-visibility-only'][0]);
         $this->assertStringContainsString("'export'", $byRule['custom-action-unauthorized'][0]);
         $this->assertArrayNotHasKey('editable-column-unchecked', $byRule);
         // Report has no policy; Team has one through Gate::policy().
@@ -67,5 +71,7 @@ final class AuditorTest extends TestCase
         $this->assertSame(0, $code);
         exec($bin.' --fail-on=never '.escapeshellarg(__DIR__.'/fixtures/as-delivered'), $out, $code);
         $this->assertSame(0, $code);
+        exec($bin.' --fail-on=hgh '.escapeshellarg(__DIR__.'/fixtures/as-delivered').' 2>/dev/null', $out, $code);
+        $this->assertSame(2, $code);
     }
 }

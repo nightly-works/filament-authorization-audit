@@ -19,14 +19,26 @@ use RecursiveIteratorIterator;
  */
 final class Auditor
 {
-    /** Actions and columns are matched by class short name, whatever their namespace. */
-    private const CUSTOM_ACTIONS = ['Action', 'BulkAction'];
-    private const EDITABLE_COLUMNS = ['TextInputColumn', 'SelectColumn', 'ToggleColumn', 'CheckboxColumn'];
-    private const BULK_ACTIONS_CHECKING_ANY = ['DeleteBulkAction', 'ForceDeleteBulkAction', 'RestoreBulkAction'];
+    /** Fully qualified Filament classes: Filament 4 and 5 (Filament\\Actions) and the older table namespaces. */
+    private const CUSTOM_ACTIONS = [
+        'Filament\\Actions\\Action', 'Filament\\Actions\\BulkAction',
+        'Filament\\Tables\\Actions\\Action', 'Filament\\Tables\\Actions\\BulkAction',
+    ];
+    private const EDITABLE_COLUMNS = [
+        'Filament\\Tables\\Columns\\TextInputColumn', 'Filament\\Tables\\Columns\\SelectColumn',
+        'Filament\\Tables\\Columns\\ToggleColumn', 'Filament\\Tables\\Columns\\CheckboxColumn',
+    ];
+    private const BULK_ACTIONS_CHECKING_ANY = [
+        'Filament\\Actions\\DeleteBulkAction', 'Filament\\Actions\\ForceDeleteBulkAction', 'Filament\\Actions\\RestoreBulkAction',
+        'Filament\\Tables\\Actions\\DeleteBulkAction', 'Filament\\Tables\\Actions\\ForceDeleteBulkAction', 'Filament\\Tables\\Actions\\RestoreBulkAction',
+    ];
     private const SKIPPED_DIRS = ['vendor', 'node_modules', 'storage', '.git', 'tests'];
 
     private Parser $parser;
     private NodeFinder $finder;
+
+    /** @var list<string> files that could not be parsed in the last audit */
+    public array $skipped = [];
 
     public function __construct()
     {
@@ -38,10 +50,13 @@ final class Auditor
     public function audit(string $path): array
     {
         $files = [];
+        $this->skipped = [];
         foreach ($this->phpFiles($path) as $file) {
             $ast = $this->parse($file);
             if ($ast !== null) {
                 $files[$file] = $ast;
+            } else {
+                $this->skipped[] = $file;
             }
         }
 
@@ -104,6 +119,7 @@ final class Auditor
 
         foreach ($this->finder->findInstanceOf($ast, Node\Expr\StaticCall::class) as $call) {
             $method = $call->name instanceof Node\Identifier ? $call->name->toString() : null;
+            $fqcn = $call->class instanceof Node\Name ? ltrim($call->class->toString(), '\\') : null;
             $class = $call->class instanceof Node\Name ? $call->class->getLast() : null;
 
             if ($method === 'skipAuthorization' && ($call->args === [] || $this->isTrue($call->args[0]->value ?? null))) {
@@ -115,23 +131,26 @@ final class Auditor
             }
             $chain = $this->chainNames($call);
 
-            if (in_array($class, self::CUSTOM_ACTIONS, true)) {
+            // A link-only action (url() and no action()) runs nothing on the server.
+            $linkOnly = in_array('url', $chain, true) && ! in_array('action', $chain, true);
+
+            if (in_array($fqcn, self::CUSTOM_ACTIONS, true) && ! $linkOnly) {
                 if (! array_intersect($chain, ['authorize', 'authorizeAny', 'authorizeIndividualRecords'])) {
                     $label = $this->firstArgString($call);
-                    if (array_intersect($chain, ['visible', 'hidden'])) {
-                        $add('custom-action-visibility-only', Finding::MEDIUM, $call, "Custom action{$label} is only shown or hidden: unless that condition is a permission check, any panel user can run it. Add ->authorize('<ability>').");
+                    if (array_intersect($chain, ['visible', 'hidden', 'disabled'])) {
+                        $add('custom-action-visibility-only', Finding::MEDIUM, $call, "Custom action{$label} is only shown, hidden or disabled: unless that condition is a permission check, any panel user can run it. Add ->authorize('<ability>').");
                     } else {
                         $add('custom-action-unauthorized', Finding::HIGH, $call, "Custom action{$label} has no authorization: policies are not checked for custom actions. Add ->authorize('<ability>').");
                     }
                 }
             }
 
-            if (in_array($class, self::EDITABLE_COLUMNS, true) && ! array_intersect($chain, ['disabled', 'hidden', 'visible'])) {
+            if (in_array($fqcn, self::EDITABLE_COLUMNS, true) && ! array_intersect($chain, ['disabled', 'hidden', 'visible'])) {
                 $label = $this->firstArgString($call);
                 $add('editable-column-unchecked', Finding::MEDIUM, $call, "{$class}{$label} writes to the record without a policy check: editable columns respect only disabled() and hidden().");
             }
 
-            if (in_array($class, self::BULK_ACTIONS_CHECKING_ANY, true) && ! in_array('authorizeIndividualRecords', $chain, true)) {
+            if (in_array($fqcn, self::BULK_ACTIONS_CHECKING_ANY, true) && ! in_array('authorizeIndividualRecords', $chain, true)) {
                 $add('bulk-action-any-only', Finding::NOTICE, $call, "{$class} checks the policy's *Any() method only, not each record. Add ->authorizeIndividualRecords('<ability>') if some records must be protected.");
             }
         }

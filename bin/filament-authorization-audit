@@ -7,11 +7,17 @@
 use NightlyWorks\FilamentAuthorizationAudit\Auditor;
 use NightlyWorks\FilamentAuthorizationAudit\Finding;
 
-foreach ([__DIR__.'/../vendor/autoload.php', __DIR__.'/../../../autoload.php'] as $autoload) {
-    if (is_file($autoload)) {
+$autoloaded = false;
+foreach ([$GLOBALS['_composer_autoload_path'] ?? null, __DIR__.'/../vendor/autoload.php', __DIR__.'/../../../autoload.php'] as $autoload) {
+    if ($autoload !== null && is_file($autoload)) {
         require $autoload;
+        $autoloaded = true;
         break;
     }
+}
+if (! $autoloaded) {
+    fwrite(STDERR, "Composer's autoloader was not found: run composer install first.\n");
+    exit(2);
 }
 
 $json = false;
@@ -22,6 +28,10 @@ foreach (array_slice($argv, 1) as $arg) {
         $json = true;
     } elseif (str_starts_with($arg, '--fail-on=')) {
         $failOn = substr($arg, 10);
+        if (! in_array($failOn, ['high', 'medium', 'notice', 'never'], true)) {
+            fwrite(STDERR, "--fail-on must be high, medium, notice or never\n");
+            exit(2);
+        }
     } elseif ($arg === '--help' || $arg === '-h') {
         fwrite(STDOUT, "Usage: filament-authorization-audit [--json] [--fail-on=high|medium|never] [path ...]\n");
         exit(0);
@@ -37,7 +47,11 @@ foreach ($paths as $path) {
         fwrite(STDERR, "No such file or directory: {$path}\n");
         exit(2);
     }
-    array_push($findings, ...(new Auditor())->audit($path));
+    $auditor = new Auditor();
+    array_push($findings, ...$auditor->audit($path));
+    foreach ($auditor->skipped as $file) {
+        fwrite(STDERR, "Skipped (parse error): {$file}\n");
+    }
 }
 
 if ($json) {
